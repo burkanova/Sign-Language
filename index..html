@@ -1,0 +1,193 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>ЫМ — распознавание жестов (прототип)</title>
+<style>
+  :root{
+    --bg:#0f1420; --card:#171d2b; --accent:#5b8def; --text:#eef2fb; --muted:#8a93a8; --good:#4caf7d;
+  }
+  *{box-sizing:border-box;}
+  body{
+    margin:0; font-family:-apple-system,Segoe UI,Roboto,sans-serif;
+    background:var(--bg); color:var(--text); min-height:100vh;
+    display:flex; flex-direction:column; align-items:center; padding:24px 16px;
+  }
+  h1{font-size:20px; margin:0 0 4px;}
+  p.sub{color:var(--muted); margin:0 0 20px; font-size:14px; text-align:center;}
+  .stage{
+    position:relative; width:100%; max-width:480px; aspect-ratio:4/3;
+    background:#000; border-radius:16px; overflow:hidden; box-shadow:0 8px 30px rgba(0,0,0,.4);
+  }
+  video, canvas{position:absolute; top:0; left:0; width:100%; height:100%; object-fit:cover;}
+  video{transform:scaleX(-1);}
+  canvas{transform:scaleX(-1);}
+  .panel{
+    width:100%; max-width:480px; margin-top:16px; background:var(--card);
+    border-radius:14px; padding:16px; text-align:center;
+  }
+  .gesture{font-size:28px; font-weight:700; min-height:38px;}
+  .status{font-size:13px; color:var(--muted); margin-top:6px;}
+  button{
+    margin-top:14px; background:var(--accent); color:#fff; border:none;
+    padding:10px 20px; border-radius:10px; font-size:15px; cursor:pointer;
+  }
+  button:disabled{opacity:.5; cursor:default;}
+  .dot{display:inline-block; width:8px; height:8px; border-radius:50%; background:var(--muted); margin-right:6px;}
+  .dot.live{background:var(--good);}
+  .legend{font-size:12px; color:var(--muted); margin-top:10px; line-height:1.6;}
+</style>
+</head>
+<body>
+  <h1>ЫМ — прототип распознавания жестов</h1>
+  <p class="sub">Разреши доступ к камере и покажи ладонь в кадр</p>
+
+  <div class="stage">
+    <video id="video" autoplay playsinline muted></video>
+    <canvas id="overlay"></canvas>
+  </div>
+
+  <div class="panel">
+    <div><span class="dot" id="dot"></span><span id="statusText">Загрузка модели…</span></div>
+    <div class="gesture" id="gestureText">—</div>
+    <div class="status" id="hint"></div>
+    <button id="speakBtn" disabled>🔊 Озвучить ещё раз</button>
+    <div class="legend">
+      Таанылуучу ишараттар: ачык алакан («Салам»), муштум («Ооба»), сүйлөм манжасы («Этибар бер»),
+      victory («Салам»), бармак өйдө («Жакшы»)
+    </div>
+  </div>
+
+<script src="https://cdn.jsdelivr.net/npm/@mediapipe/hands@0.4.1646424915/hands.js"></script>
+<script>
+const video = document.getElementById('video');
+const canvas = document.getElementById('overlay');
+const ctx = canvas.getContext('2d');
+const gestureText = document.getElementById('gestureText');
+const statusText = document.getElementById('statusText');
+const hint = document.getElementById('hint');
+const dot = document.getElementById('dot');
+const speakBtn = document.getElementById('speakBtn');
+
+const GESTURES = {
+  '11111': { label: 'Ачык алакан', say: 'Салам' },
+  '00000': { label: 'Муштум', say: 'Ооба' },
+  '01100': { label: 'Victory', say: 'Салам' },
+  '10000': { label: 'Бармак өйдө', say: 'Жакшы' },
+  '01000': { label: 'Сүйлөм манжасы', say: 'Этибар бер' },
+};
+
+let lastSpoken = '';
+let lastSpokenAt = 0;
+let kyrgyzVoiceAvailable = false;
+
+function checkKyrgyzVoice(){
+  const voices = speechSynthesis.getVoices();
+  kyrgyzVoiceAvailable = voices.some(v => v.lang.toLowerCase().startsWith('ky'));
+  if (!kyrgyzVoiceAvailable){
+    hint.textContent = 'Кыргыз үнү табылган жок — текст гана көрсөтүлөт';
+  }
+}
+if ('speechSynthesis' in window){
+  speechSynthesis.onvoiceschanged = checkKyrgyzVoice;
+  checkKyrgyzVoice();
+}
+
+function fingerStates(lm){
+  // индексы точек MediaPipe Hands: 4 thumb tip, 8 index tip, 12 middle, 16 ring, 20 pinky
+  const tips = [4, 8, 12, 16, 20];
+  const pips = [2, 6, 10, 14, 18];
+  let state = '';
+  for (let i = 0; i < 5; i++){
+    const tip = lm[tips[i]];
+    const pip = lm[pips[i]];
+    if (i === 0){
+      // большой палец — сравниваем по x относительно запястья
+      state += (Math.abs(tip.x - lm[0].x) > Math.abs(pip.x - lm[0].x)) ? '1' : '0';
+    } else {
+      state += (tip.y < pip.y) ? '1' : '0';
+    }
+  }
+  return state;
+}
+
+function speak(text){
+  if (!('speechSynthesis' in window) || !kyrgyzVoiceAvailable) return;
+  const u = new SpeechSynthesisUtterance(text);
+  u.lang = 'ky-KG';
+  speechSynthesis.cancel();
+  speechSynthesis.speak(u);
+}
+
+function onResults(results){
+  canvas.width = video.videoWidth;
+  canvas.height = video.videoHeight;
+  ctx.clearRect(0, 0, canvas.width, canvas.height);
+
+  if (results.multiHandLandmarks && results.multiHandLandmarks.length > 0){
+    dot.classList.add('live');
+    const lm = results.multiHandLandmarks[0];
+
+    ctx.fillStyle = '#5b8def';
+    for (const p of lm){
+      ctx.beginPath();
+      ctx.arc(p.x * canvas.width, p.y * canvas.height, 4, 0, 2 * Math.PI);
+      ctx.fill();
+    }
+
+    const code = fingerStates(lm);
+    const g = GESTURES[code];
+    if (g){
+      gestureText.textContent = g.label;
+      hint.textContent = 'Распознано';
+      const now = Date.now();
+      if (g.say !== lastSpoken || now - lastSpokenAt > 2500){
+        speak(g.say);
+        lastSpoken = g.say;
+        lastSpokenAt = now;
+      }
+      speakBtn.disabled = false;
+      speakBtn.onclick = () => speak(g.say);
+    } else {
+      gestureText.textContent = '…';
+      hint.textContent = 'Жест не из словаря демо';
+    }
+  } else {
+    dot.classList.remove('live');
+    gestureText.textContent = '—';
+    hint.textContent = 'Рука не найдена в кадре';
+  }
+}
+
+const hands = new Hands({
+  locateFile: (file) => `https://cdn.jsdelivr.net/npm/@mediapipe/hands@0.4.1646424915/${file}`
+});
+hands.setOptions({
+  maxNumHands: 1,
+  modelComplexity: 1,
+  minDetectionConfidence: 0.7,
+  minTrackingConfidence: 0.5
+});
+hands.onResults(onResults);
+
+async function start(){
+  try{
+    const stream = await navigator.mediaDevices.getUserMedia({ video: { width: 640, height: 480 } });
+    video.srcObject = stream;
+    await video.play();
+    statusText.textContent = 'Камера активна';
+
+    async function loop(){
+      await hands.send({ image: video });
+      requestAnimationFrame(loop);
+    }
+    loop();
+  } catch(err){
+    statusText.textContent = 'Нет доступа к камере: ' + err.message;
+  }
+}
+start();
+</script>
+</body>
+</html>
