@@ -147,31 +147,7 @@ function speak(text){
 
   speechSynthesis.speak(utterance);
 }
-if (!('speechSynthesis' in window)) {
-hint.textContent = 'Браузер не поддерживает озвучивание';
-return;
-}
 
-speechSynthesis.cancel();
-
-const voices = speechSynthesis.getVoices();
-const voice =
-voices.find(v => v.lang.toLowerCase().startsWith('ky')) ||
-voices.find(v => v.lang.toLowerCase().startsWith('ru')) ||
-voices.find(v => v.lang.toLowerCase().startsWith('en'));
-
-const u = new SpeechSynthesisUtterance(text);
-u.lang = voice ? voice.lang : 'ky-KG';
-
-if (voice) {
-u.voice = voice;
-}
-
-u.rate = 0.9;
-u.pitch = 1;
-
-speechSynthesis.speak(u);
-}
   if (!('speechSynthesis' in window) || !kyrgyzVoiceAvailable) return;
   const u = new SpeechSynthesisUtterance(text);
   u.lang = 'ky-KG';
