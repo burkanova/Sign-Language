@@ -148,12 +148,6 @@ function speak(text){
   speechSynthesis.speak(utterance);
 }
 
-  if (!('speechSynthesis' in window) || !kyrgyzVoiceAvailable) return;
-  const u = new SpeechSynthesisUtterance(text);
-  u.lang = 'ky-KG';
-  speechSynthesis.cancel();
-  speechSynthesis.speak(u);
-}
 
 function onResults(results){
   canvas.width = video.videoWidth;
