@@ -53,7 +53,7 @@
 </head>
 <body>
   <h1>ЫМ — обучаемое распознавание жестов</h1>
-  <p class="sub">Запиши свои жесты КЖЯ — сайт запомнит их и будет узнавать по камере</p>
+  <p class="sub">Запиши свои жесты КЖЯ (одной или двумя руками) — сайт запомнит их и будет узнавать по камере</p>
 
   <div class="stage">
     <video id="video" autoplay playsinline muted></video>
@@ -127,7 +127,7 @@ let currentVector = null;
 let currentGestureWord = null;
 let phrase = [];
 let recording = false;
-let recordBuffer = [];
+let recordBuffer = {};
 let kyrgyzVoiceAvailable = false;
 
 // ---------- нормализация координат кисти в вектор, не зависящий от размера/позиции ----------
@@ -180,20 +180,22 @@ recordBtn.onclick = () => {
   if (!label){ trainStatus.textContent = 'Сначала впиши слово на кыргызском'; return; }
   if (!currentVector){ trainStatus.textContent = 'Рука не найдена в кадре'; return; }
   recording = true;
-  recordBuffer = [];
+  recordBuffer = {}; // {0:[vectors...], 1:[vectors...]}
   recOverlay.classList.add('on');
   recordBtn.disabled = true;
   setTimeout(() => {
     recording = false;
     recOverlay.classList.remove('on');
     recordBtn.disabled = false;
-    if (recordBuffer.length){
-      const avg = recordBuffer[0].map((_, i) =>
-        recordBuffer.reduce((s, v) => s + v[i], 0) / recordBuffer.length
-      );
-      dataset.push({ label, vector: avg });
+    const slots = Object.keys(recordBuffer);
+    if (slots.length){
+      slots.forEach(slot => {
+        const frames = recordBuffer[slot];
+        const avg = frames[0].map((_, i) => frames.reduce((s, v) => s + v[i], 0) / frames.length);
+        dataset.push({ label, vector: avg });
+      });
       saveDataset();
-      trainStatus.textContent = `Добавлен пример слова «${label}»`;
+      trainStatus.textContent = `Добавлен пример слова «${label}» (${slots.length === 2 ? 'обе руки' : '1 рука'})`;
     } else {
       trainStatus.textContent = 'Не удалось записать — рука пропала из кадра';
     }
@@ -275,35 +277,49 @@ function speak(text){
   speechSynthesis.speak(u);
 }
 
-// ---------- MediaPipe ----------
+// ---------- MediaPipe (поддержка 1 или 2 рук) ----------
 function onResults(results){
   canvas.width = video.videoWidth;
   canvas.height = video.videoHeight;
   ctx.clearRect(0, 0, canvas.width, canvas.height);
 
-  if (results.multiHandLandmarks && results.multiHandLandmarks.length > 0){
+  const hands_ = results.multiHandLandmarks || [];
+
+  if (hands_.length > 0){
     dot.classList.add('live');
-    const lm = results.multiHandLandmarks[0];
+
+    // сортируем руки по x запястья — стабильный порядок "слот 0 / слот 1" между кадрами
+    const sorted = hands_.slice().sort((a, b) => a[0].x - b[0].x);
 
     ctx.fillStyle = '#5b8def';
-    for (const p of lm){
-      ctx.beginPath();
-      ctx.arc(p.x * canvas.width, p.y * canvas.height, 4, 0, 2 * Math.PI);
-      ctx.fill();
+    const vectors = sorted.map(lm => {
+      for (const p of lm){
+        ctx.beginPath();
+        ctx.arc(p.x * canvas.width, p.y * canvas.height, 4, 0, 2 * Math.PI);
+        ctx.fill();
+      }
+      return toVector(lm);
+    });
+
+    currentVector = vectors; // массив векторов — одна или две руки
+    if (recording){
+      vectors.forEach((v, slot) => {
+        if (!recordBuffer[slot]) recordBuffer[slot] = [];
+        recordBuffer[slot].push(v);
+      });
     }
 
-    currentVector = toVector(lm);
-    if (recording) recordBuffer.push(currentVector);
+    const labels = vectors.map(v => classify(v)).filter(Boolean);
+    const uniqueLabels = [...new Set(labels)];
 
-    const label = classify(currentVector);
-    if (label){
-      gestureText.textContent = label;
-      hint.textContent = kyrgyzVoiceAvailable
-        ? 'Распознано — можно добавить в фразу'
-        : 'Распознано (озвучка русским голосом — кыргызского нет в браузере)';
-      currentGestureWord = label;
+    if (uniqueLabels.length){
+      gestureText.textContent = uniqueLabels.join(' + ');
+      hint.textContent = (kyrgyzVoiceAvailable
+        ? `Распознано (${hands_.length === 2 ? 'обе руки' : '1 рука'}) — можно добавить в фразу`
+        : `Распознано (озвучка русским голосом — кыргызского нет в браузере)`);
+      currentGestureWord = uniqueLabels.join(' ');
       addWordBtn.disabled = false;
-      speak(label);
+      speak(uniqueLabels.join(', '));
     } else {
       gestureText.textContent = dataset.length ? '…' : 'Словарь пуст';
       hint.textContent = dataset.length ? 'Похожего жеста нет в датасете' : 'Запиши первый жест ниже';
@@ -323,7 +339,7 @@ function onResults(results){
 const hands = new Hands({
   locateFile: (file) => `https://cdn.jsdelivr.net/npm/@mediapipe/hands@0.4.1646424915/${file}`
 });
-hands.setOptions({ maxNumHands: 1, modelComplexity: 1, minDetectionConfidence: 0.7, minTrackingConfidence: 0.5 });
+hands.setOptions({ maxNumHands: 2, modelComplexity: 1, minDetectionConfidence: 0.7, minTrackingConfidence: 0.5 });
 hands.onResults(onResults);
 
 async function start(){
