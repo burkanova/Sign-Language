@@ -3,11 +3,9 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>ЫМ — распознавание жестов (прототип)</title>
+<title>ЫМ — распознавание жестов (обучаемый прототип)</title>
 <style>
-  :root{
-    --bg:#0f1420; --card:#171d2b; --accent:#5b8def; --text:#eef2fb; --muted:#8a93a8; --good:#4caf7d;
-  }
+  :root{ --bg:#0f1420; --card:#171d2b; --accent:#5b8def; --text:#eef2fb; --muted:#8a93a8; --good:#4caf7d; --warn:#e0a964; }
   *{box-sizing:border-box;}
   body{
     margin:0; font-family:-apple-system,Segoe UI,Roboto,sans-serif;
@@ -15,7 +13,7 @@
     display:flex; flex-direction:column; align-items:center; padding:24px 16px;
   }
   h1{font-size:20px; margin:0 0 4px;}
-  p.sub{color:var(--muted); margin:0 0 20px; font-size:14px; text-align:center;}
+  p.sub{color:var(--muted); margin:0 0 20px; font-size:14px; text-align:center; max-width:480px;}
   .stage{
     position:relative; width:100%; max-width:480px; aspect-ratio:4/3;
     background:#000; border-radius:16px; overflow:hidden; box-shadow:0 8px 30px rgba(0,0,0,.4);
@@ -23,29 +21,44 @@
   video, canvas{position:absolute; top:0; left:0; width:100%; height:100%; object-fit:cover;}
   video{transform:scaleX(-1);}
   canvas{transform:scaleX(-1);}
-  .panel{
-    width:100%; max-width:480px; margin-top:16px; background:var(--card);
-    border-radius:14px; padding:16px; text-align:center;
-  }
-  .gesture{font-size:28px; font-weight:700; min-height:38px;}
+  .panel{ width:100%; max-width:480px; margin-top:16px; background:var(--card); border-radius:14px; padding:16px; text-align:center;}
+  .gesture{font-size:26px; font-weight:700; min-height:34px;}
   .status{font-size:13px; color:var(--muted); margin-top:6px;}
-  button{
-    margin-top:14px; background:var(--accent); color:#fff; border:none;
-    padding:10px 20px; border-radius:10px; font-size:15px; cursor:pointer;
-  }
-  button:disabled{opacity:.5; cursor:default;}
+  button{ background:var(--accent); color:#fff; border:none; padding:10px 16px; border-radius:10px; font-size:14px; cursor:pointer;}
+  button.secondary{background:#2a3242;}
+  button:disabled{opacity:.45; cursor:default;}
   .dot{display:inline-block; width:8px; height:8px; border-radius:50%; background:var(--muted); margin-right:6px;}
   .dot.live{background:var(--good);}
+  .row{display:flex; gap:8px; flex-wrap:wrap; justify-content:center; margin-top:10px;}
+  .divider{margin-top:16px; padding-top:14px; border-top:1px solid #232b3d;}
+  .sectionTitle{font-size:13px; color:var(--muted); text-transform:uppercase; letter-spacing:.04em; margin-bottom:8px;}
+  input[type=text]{
+    width:100%; padding:10px; border-radius:10px; border:none; background:#0f1420;
+    color:var(--text); font-size:15px; margin-bottom:8px;
+  }
+  .phraseText{font-size:20px; font-weight:600; min-height:28px; margin:4px 0 8px;}
+  .wordList{display:flex; flex-wrap:wrap; gap:6px; justify-content:center; margin-top:10px;}
+  .chip{
+    background:#0f1420; border:1px solid #2a3242; border-radius:999px; padding:4px 10px;
+    font-size:12px; color:var(--muted);
+  }
+  .chip b{color:var(--text);}
   .legend{font-size:12px; color:var(--muted); margin-top:10px; line-height:1.6;}
+  .recOverlay{
+    position:absolute; inset:0; display:none; align-items:center; justify-content:center;
+    background:rgba(0,0,0,.4); color:#fff; font-size:16px; font-weight:700;
+  }
+  .recOverlay.on{display:flex;}
 </style>
 </head>
 <body>
-  <h1>ЫМ — прототип распознавания жестов</h1>
-  <p class="sub">Разреши доступ к камере и покажи ладонь в кадр</p>
+  <h1>ЫМ — обучаемое распознавание жестов</h1>
+  <p class="sub">Запиши свои жесты КЖЯ — сайт запомнит их и будет узнавать по камере</p>
 
   <div class="stage">
     <video id="video" autoplay playsinline muted></video>
     <canvas id="overlay"></canvas>
+    <div class="recOverlay" id="recOverlay">● Запись жеста…</div>
   </div>
 
   <div class="panel">
@@ -53,18 +66,33 @@
     <div class="gesture" id="gestureText">—</div>
     <div class="status" id="hint"></div>
 
-<div style="margin-top:18px;text-align:left">
-  <label for="sentence" style="font-size:14px">Собранная фраза:</label>
-  <textarea id="sentence" readonly placeholder="Здесь появится собранный текст..."
-    style="width:100%;height:90px;margin-top:8px;padding:12px;border-radius:10px;border:1px solid #38445c;background:#0f1420;color:#eef2fb;font-size:16px;resize:vertical"></textarea>
-</div>
+    <div class="divider">
+      <div class="sectionTitle">Обучение новому жесту</div>
+      <input type="text" id="labelInput" placeholder="Слово на кыргызском, напр. рахмат">
+      <button id="recordBtn">⏺ Записать жест (1.5 сек)</button>
+      <div class="status" id="trainStatus">Примеров пока нет</div>
+      <div class="wordList" id="wordList"></div>
+      <div class="row">
+        <button class="secondary" id="exportBtn">⬇ Скачать датасет</button>
+        <button class="secondary" id="importBtn">⬆ Загрузить датасет</button>
+        <button class="secondary" id="resetBtn">🗑 Сбросить всё</button>
+      </div>
+      <input type="file" id="importFile" accept=".json" style="display:none;">
+    </div>
 
-<button id="addBtn" disabled>➕ Добавить слово</button>
-<button id="speakBtn" disabled>🔊 Озвучить фразу</button>
-<button id="clearBtn">🗑 Очистить</button>
+    <div class="divider">
+      <div class="sectionTitle">Фраза</div>
+      <div class="phraseText" id="phraseText">—</div>
+      <div class="row">
+        <button id="addWordBtn" disabled>➕ Добавить слово</button>
+        <button id="speakPhraseBtn" class="secondary" disabled>🔊 Озвучить фразу</button>
+        <button id="clearPhraseBtn" class="secondary">🗑 Очистить фразу</button>
+      </div>
+    </div>
+
     <div class="legend">
-      Таанылуучу ишараттар: ачык алакан («Салам»), муштум («Ооба»), сүйлөм манжасы («Этибар бер»),
-      victory («Салам»), бармак өйдө («Жакшы»)
+      Для надёжности записывай каждый жест минимум 3–5 раз под чуть разными углами.
+      Чем больше примеров — тем точнее распознавание.
     </div>
   </div>
 
@@ -77,113 +105,177 @@ const gestureText = document.getElementById('gestureText');
 const statusText = document.getElementById('statusText');
 const hint = document.getElementById('hint');
 const dot = document.getElementById('dot');
-const speakBtn = document.getElementById('speakBtn');
-  const sentence = document.getElementById('sentence');
-const addBtn = document.getElementById('addBtn');
-const clearBtn = document.getElementById('clearBtn');
+const recOverlay = document.getElementById('recOverlay');
 
-let currentWord = '';
-let words = [];
+const labelInput = document.getElementById('labelInput');
+const recordBtn = document.getElementById('recordBtn');
+const trainStatus = document.getElementById('trainStatus');
+const wordList = document.getElementById('wordList');
+const exportBtn = document.getElementById('exportBtn');
+const importBtn = document.getElementById('importBtn');
+const importFile = document.getElementById('importFile');
+const resetBtn = document.getElementById('resetBtn');
 
-addBtn.addEventListener('click', () => {
-  if (!currentWord) return;
+const addWordBtn = document.getElementById('addWordBtn');
+const speakPhraseBtn = document.getElementById('speakPhraseBtn');
+const clearPhraseBtn = document.getElementById('clearPhraseBtn');
+const phraseText = document.getElementById('phraseText');
 
-  words.push(currentWord);
-  sentence.value = words.join(' ');
-  speakBtn.disabled = words.length === 0;
-});
+const STORAGE_KEY = 'ym_gesture_dataset_v1';
+let dataset = JSON.parse(localStorage.getItem(STORAGE_KEY) || '[]'); // [{label, vector}]
+let currentVector = null;
+let currentGestureWord = null;
+let phrase = [];
+let recording = false;
+let recordBuffer = [];
+let kyrgyzVoiceAvailable = false;
 
-clearBtn.addEventListener('click', () => {
-  words = [];
-  sentence.value = '';
-  speakBtn.disabled = true;
-});
-
-speakBtn.addEventListener('click', () => {
-  if (words.length > 0) {
-    speak(words.join(' '));
+// ---------- нормализация координат кисти в вектор, не зависящий от размера/позиции ----------
+function toVector(lm){
+  const wrist = lm[0];
+  const mid = lm[9]; // middle finger MCP — для масштаба
+  const scale = Math.hypot(mid.x - wrist.x, mid.y - wrist.y) || 1;
+  const v = [];
+  for (const p of lm){
+    v.push((p.x - wrist.x) / scale);
+    v.push((p.y - wrist.y) / scale);
   }
-});
+  return v;
+}
+function dist(a, b){
+  let s = 0;
+  for (let i = 0; i < a.length; i++) s += (a[i] - b[i]) ** 2;
+  return Math.sqrt(s);
+}
+function classify(vec){
+  if (!dataset.length) return null;
+  let best = null, bestD = Infinity;
+  for (const ex of dataset){
+    const d = dist(vec, ex.vector);
+    if (d < bestD){ bestD = d; best = ex.label; }
+  }
+  return bestD < 0.6 ? best : null; // порог — можно подстроить
+}
 
-const GESTURES = {
-  '11111': { label: 'Ачык алакан', say: 'Салам' },
-  '00000': { label: 'Муштум', say: 'Ооба' },
-  '01100': { label: 'Victory', say: 'Салам' },
-  '10000': { label: 'Бармак өйдө', say: 'Жакшы' },
-  '01000': { label: 'Сүйлөм манжасы', say: 'Этибар бер' },
+// ---------- датасет: UI ----------
+function saveDataset(){
+  localStorage.setItem(STORAGE_KEY, JSON.stringify(dataset));
+  renderWordList();
+}
+function renderWordList(){
+  const counts = {};
+  dataset.forEach(ex => counts[ex.label] = (counts[ex.label] || 0) + 1);
+  const labels = Object.keys(counts);
+  wordList.innerHTML = labels.length
+    ? labels.map(l => `<span class="chip"><b>${l}</b> ×${counts[l]}</span>`).join('')
+    : '';
+  trainStatus.textContent = labels.length
+    ? `Слов в словаре: ${labels.length}, примеров всего: ${dataset.length}`
+    : 'Примеров пока нет — запиши первый жест';
+}
+renderWordList();
+
+recordBtn.onclick = () => {
+  const label = labelInput.value.trim();
+  if (!label){ trainStatus.textContent = 'Сначала впиши слово на кыргызском'; return; }
+  if (!currentVector){ trainStatus.textContent = 'Рука не найдена в кадре'; return; }
+  recording = true;
+  recordBuffer = [];
+  recOverlay.classList.add('on');
+  recordBtn.disabled = true;
+  setTimeout(() => {
+    recording = false;
+    recOverlay.classList.remove('on');
+    recordBtn.disabled = false;
+    if (recordBuffer.length){
+      const avg = recordBuffer[0].map((_, i) =>
+        recordBuffer.reduce((s, v) => s + v[i], 0) / recordBuffer.length
+      );
+      dataset.push({ label, vector: avg });
+      saveDataset();
+      trainStatus.textContent = `Добавлен пример слова «${label}»`;
+    } else {
+      trainStatus.textContent = 'Не удалось записать — рука пропала из кадра';
+    }
+  }, 1500);
 };
 
-let lastSpoken = '';
-let lastSpokenAt = 0;
-let kyrgyzVoiceAvailable = false;
+exportBtn.onclick = () => {
+  const blob = new Blob([JSON.stringify(dataset, null, 2)], { type: 'application/json' });
+  const a = document.createElement('a');
+  a.href = URL.createObjectURL(blob);
+  a.download = 'ym-gesture-dataset.json';
+  a.click();
+};
+importBtn.onclick = () => importFile.click();
+importFile.onchange = (e) => {
+  const file = e.target.files[0];
+  if (!file) return;
+  const reader = new FileReader();
+  reader.onload = () => {
+    try{
+      const loaded = JSON.parse(reader.result);
+      if (Array.isArray(loaded)){
+        dataset = dataset.concat(loaded);
+        saveDataset();
+        trainStatus.textContent = `Загружено ${loaded.length} примеров`;
+      }
+    } catch(err){
+      trainStatus.textContent = 'Файл повреждён или не тот формат';
+    }
+  };
+  reader.readAsText(file);
+};
+resetBtn.onclick = () => {
+  if (!confirm('Удалить все записанные жесты?')) return;
+  dataset = [];
+  saveDataset();
+};
+
+// ---------- фраза ----------
+function renderPhrase(){
+  phraseText.textContent = phrase.length ? phrase.join(' ') : '—';
+  speakPhraseBtn.disabled = phrase.length === 0;
+}
+addWordBtn.onclick = () => {
+  if (!currentGestureWord) return;
+  phrase.push(currentGestureWord);
+  renderPhrase();
+};
+speakPhraseBtn.onclick = () => { if (phrase.length) speak(phrase.join(', ')); };
+clearPhraseBtn.onclick = () => { phrase = []; renderPhrase(); };
+
+// ---------- озвучка (честно: если нет кыргызского голоса — молча показываем только текст) ----------
+let voiceLangToUse = null; // 'ky-KG' если есть родной голос, иначе ближайший доступный
 
 function checkKyrgyzVoice(){
   const voices = speechSynthesis.getVoices();
-  kyrgyzVoiceAvailable = voices.some(v => v.lang.toLowerCase().startsWith('ky'));
-  if (!kyrgyzVoiceAvailable){
-    hint.textContent = 'Кыргыз үнү табылган жок — текст гана көрсөтүлөт';
+  const ky = voices.find(v => v.lang.toLowerCase().startsWith('ky'));
+  if (ky){
+    voiceLangToUse = 'ky-KG';
+    kyrgyzVoiceAvailable = true;
+  } else {
+    // честный fallback: родного кыргызского голоса почти нигде нет —
+    // используем русский, его произношение кириллицы ближе всего,
+    // хотя три кыргызские буквы (Ң Ө Ү) он прочитает неточно
+    const ru = voices.find(v => v.lang.toLowerCase().startsWith('ru'));
+    voiceLangToUse = ru ? 'ru-RU' : (voices[0] ? voices[0].lang : null);
+    kyrgyzVoiceAvailable = false;
   }
 }
 if ('speechSynthesis' in window){
   speechSynthesis.onvoiceschanged = checkKyrgyzVoice;
   checkKyrgyzVoice();
 }
-
-function fingerStates(lm){
-  // индексы точек MediaPipe Hands: 4 thumb tip, 8 index tip, 12 middle, 16 ring, 20 pinky
-  const tips = [4, 8, 12, 16, 20];
-  const pips = [2, 6, 10, 14, 18];
-  let state = '';
-  for (let i = 0; i < 5; i++){
-    const tip = lm[tips[i]];
-    const pip = lm[pips[i]];
-    if (i === 0){
-      // большой палец — сравниваем по x относительно запястья
-      state += (Math.abs(tip.x - lm[0].x) > Math.abs(pip.x - lm[0].x)) ? '1' : '0';
-    } else {
-      state += (tip.y < pip.y) ? '1' : '0';
-    }
-  }
-  return state;
-}
-
 function speak(text){
-  if (!('speechSynthesis' in window)) {
-    hint.textContent = 'Браузер не поддерживает озвучивание';
-    return;
-  }
-
-  const voices = speechSynthesis.getVoices();
-  const voice =
-    voices.find(v => v.lang.toLowerCase().startsWith('ky')) ||
-    voices.find(v => v.name.includes('Irina')) ||
-    voices.find(v => v.lang.toLowerCase() === 'ru-ru');
-
+  if (!('speechSynthesis' in window) || !voiceLangToUse) return;
+  const u = new SpeechSynthesisUtterance(text);
+  u.lang = voiceLangToUse;
   speechSynthesis.cancel();
-
-  const utterance = new SpeechSynthesisUtterance(text);
-  if (voice) {
-    utterance.voice = voice;
-    utterance.lang = voice.lang;
-  } else {
-    utterance.lang = 'ru-RU';
-  }
-
-  utterance.rate = 0.85;
-  utterance.onstart = () => {
-    hint.textContent = 'Озвучивание перевода…';
-  };
-  utterance.onerror = (event) => {
-    hint.textContent = 'Не удалось озвучить: ' + event.error;
-  };
-  utterance.onend = () => {
-    hint.textContent = 'Перевод распознан';
-  };
-
-  speechSynthesis.speak(utterance);
+  speechSynthesis.speak(u);
 }
 
-
+// ---------- MediaPipe ----------
 function onResults(results){
   canvas.width = video.videoWidth;
   canvas.height = video.videoHeight;
@@ -200,44 +292,38 @@ function onResults(results){
       ctx.fill();
     }
 
-    const code = fingerStates(lm);
-    const g = GESTURES[code];
-    if (g){
-      gestureText.textContent = g.say;
-      currentWord = g.say;
-  addBtn.disabled = false;
+    currentVector = toVector(lm);
+    if (recording) recordBuffer.push(currentVector);
 
-      hint.textContent = 'Распознано';
-      const now = Date.now();
-      if (g.say !== lastSpoken || now - lastSpokenAt > 2500){
-        speak(g.say);
-        lastSpoken = g.say;
-        lastSpokenAt = now;
-      }
-      speakBtn.disabled = false;
-      
+    const label = classify(currentVector);
+    if (label){
+      gestureText.textContent = label;
+      hint.textContent = kyrgyzVoiceAvailable
+        ? 'Распознано — можно добавить в фразу'
+        : 'Распознано (озвучка русским голосом — кыргызского нет в браузере)';
+      currentGestureWord = label;
+      addWordBtn.disabled = false;
+      speak(label);
     } else {
-      currentWord = '';
-addBtn.disabled = true;
-      gestureText.textContent = '…';
-      hint.textContent = 'Жест не из словаря демо';
+      gestureText.textContent = dataset.length ? '…' : 'Словарь пуст';
+      hint.textContent = dataset.length ? 'Похожего жеста нет в датасете' : 'Запиши первый жест ниже';
+      currentGestureWord = null;
+      addWordBtn.disabled = true;
     }
   } else {
     dot.classList.remove('live');
     gestureText.textContent = '—';
     hint.textContent = 'Рука не найдена в кадре';
+    currentVector = null;
+    currentGestureWord = null;
+    addWordBtn.disabled = true;
   }
 }
 
 const hands = new Hands({
   locateFile: (file) => `https://cdn.jsdelivr.net/npm/@mediapipe/hands@0.4.1646424915/${file}`
 });
-hands.setOptions({
-  maxNumHands: 1,
-  modelComplexity: 1,
-  minDetectionConfidence: 0.7,
-  minTrackingConfidence: 0.5
-});
+hands.setOptions({ maxNumHands: 1, modelComplexity: 1, minDetectionConfidence: 0.7, minTrackingConfidence: 0.5 });
 hands.onResults(onResults);
 
 async function start(){
@@ -246,11 +332,7 @@ async function start(){
     video.srcObject = stream;
     await video.play();
     statusText.textContent = 'Камера активна';
-
-    async function loop(){
-      await hands.send({ image: video });
-      requestAnimationFrame(loop);
-    }
+    async function loop(){ await hands.send({ image: video }); requestAnimationFrame(loop); }
     loop();
   } catch(err){
     statusText.textContent = 'Нет доступа к камере: ' + err.message;
