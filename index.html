@@ -113,6 +113,40 @@ function fingerStates(lm){
 }
 
 function speak(text){
+  if (!('speechSynthesis' in window)) {
+    hint.textContent = 'Браузер не поддерживает озвучивание';
+    return;
+  }
+
+  const voices = speechSynthesis.getVoices();
+  const voice =
+    voices.find(v => v.lang.toLowerCase().startsWith('ky')) ||
+    voices.find(v => v.name.includes('Irina')) ||
+    voices.find(v => v.lang.toLowerCase() === 'ru-ru');
+
+  speechSynthesis.cancel();
+
+  const utterance = new SpeechSynthesisUtterance(text);
+  if (voice) {
+    utterance.voice = voice;
+    utterance.lang = voice.lang;
+  } else {
+    utterance.lang = 'ru-RU';
+  }
+
+  utterance.rate = 0.85;
+  utterance.onstart = () => {
+    hint.textContent = 'Озвучивание перевода…';
+  };
+  utterance.onerror = (event) => {
+    hint.textContent = 'Не удалось озвучить: ' + event.error;
+  };
+  utterance.onend = () => {
+    hint.textContent = 'Перевод распознан';
+  };
+
+  speechSynthesis.speak(utterance);
+}
 if (!('speechSynthesis' in window)) {
 hint.textContent = 'Браузер не поддерживает озвучивание';
 return;
