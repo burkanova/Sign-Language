@@ -52,7 +52,16 @@
     <div><span class="dot" id="dot"></span><span id="statusText">Загрузка модели…</span></div>
     <div class="gesture" id="gestureText">—</div>
     <div class="status" id="hint"></div>
-    <button id="speakBtn" disabled>🔊 Озвучить ещё раз</button>
+
+<div style="margin-top:18px;text-align:left">
+  <label for="sentence" style="font-size:14px">Собранная фраза:</label>
+  <textarea id="sentence" readonly placeholder="Здесь появится собранный текст..."
+    style="width:100%;height:90px;margin-top:8px;padding:12px;border-radius:10px;border:1px solid #38445c;background:#0f1420;color:#eef2fb;font-size:16px;resize:vertical"></textarea>
+</div>
+
+<button id="addBtn" disabled>➕ Добавить слово</button>
+<button id="speakBtn" disabled>🔊 Озвучить фразу</button>
+<button id="clearBtn">🗑 Очистить</button>
     <div class="legend">
       Таанылуучу ишараттар: ачык алакан («Салам»), муштум («Ооба»), сүйлөм манжасы («Этибар бер»),
       victory («Салам»), бармак өйдө («Жакшы»)
@@ -69,6 +78,32 @@ const statusText = document.getElementById('statusText');
 const hint = document.getElementById('hint');
 const dot = document.getElementById('dot');
 const speakBtn = document.getElementById('speakBtn');
+  const sentence = document.getElementById('sentence');
+const addBtn = document.getElementById('addBtn');
+const clearBtn = document.getElementById('clearBtn');
+
+let currentWord = '';
+let words = [];
+
+addBtn.addEventListener('click', () => {
+  if (!currentWord) return;
+
+  words.push(currentWord);
+  sentence.value = words.join(' ');
+  speakBtn.disabled = words.length === 0;
+});
+
+clearBtn.addEventListener('click', () => {
+  words = [];
+  sentence.value = '';
+  speakBtn.disabled = true;
+});
+
+speakBtn.addEventListener('click', () => {
+  if (words.length > 0) {
+    speak(words.join(' '));
+  }
+});
 
 const GESTURES = {
   '11111': { label: 'Ачык алакан', say: 'Салам' },
@@ -169,6 +204,9 @@ function onResults(results){
     const g = GESTURES[code];
     if (g){
       gestureText.textContent = g.say;
+      currentWord = g.say;
+  addBtn.disabled = false;
+
       hint.textContent = 'Распознано';
       const now = Date.now();
       if (g.say !== lastSpoken || now - lastSpokenAt > 2500){
@@ -177,8 +215,10 @@ function onResults(results){
         lastSpokenAt = now;
       }
       speakBtn.disabled = false;
-      speakBtn.onclick = () => speak(g.say);
+      
     } else {
+      currentWord = '';
+addBtn.disabled = true;
       gestureText.textContent = '…';
       hint.textContent = 'Жест не из словаря демо';
     }
