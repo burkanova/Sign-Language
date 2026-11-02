@@ -139,7 +139,7 @@ function onResults(results){
     const code = fingerStates(lm);
     const g = GESTURES[code];
     if (g){
-      gestureText.textContent = g.label;
+      gestureText.textContent = g.say;
       hint.textContent = 'Распознано';
       const now = Date.now();
       if (g.say !== lastSpoken || now - lastSpokenAt > 2500){
